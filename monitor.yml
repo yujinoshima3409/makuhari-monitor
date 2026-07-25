@@ -2,8 +2,8 @@ name: Makuhari facility availability monitor
 
 on:
   schedule:
-    # 1時間おきに実行(UTC基準)。頻度を変えたい場合はcron式を調整してください。
-    - cron: "0 * * * *"
+    # 10分おきに実行(UTC基準)。頻度を変えたい場合はcron式を調整してください。
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}   # 手動実行用ボタンも使えるように
 
 permissions:
