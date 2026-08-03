@@ -105,18 +105,22 @@ def read_month_grid(page) -> tuple[str, dict[int, str]]:
     """
     現在#calendar_areaに表示されている月のヘッダー("YYYY-M")と、
     日付->状態("available"/"unavailable"/"reserved"等) の辞書を返す。
+
+    1セルずつ順番に読み取ると、読んでいる途中でJSがカレンダーを
+    再描画してセル数がズレてしまい、タイムアウトすることがあった。
+    そのため、ブラウザ側で一括取得(evaluate)して競合を避ける。
     """
-    header = page.locator("#calendar_area span").first.inner_text()
-    cells = page.locator("#calendar_area td")
-    count = cells.count()
+    header = page.eval_on_selector("#calendar_area span", "el => el.textContent")
+    cells_data = page.eval_on_selector_all(
+        "#calendar_area td",
+        "els => els.map(el => ({text: el.textContent.trim(), cls: el.className}))",
+    )
     day_status = {}
-    for i in range(count):
-        cell = cells.nth(i)
-        text = cell.inner_text().strip()
+    for c in cells_data:
+        text = c["text"]
         if not text or not text.isdigit():
             continue  # 前後月の空白セル
-        cls = (cell.get_attribute("class") or "").strip()
-        day_status[int(text)] = cls
+        day_status[int(text)] = (c["cls"] or "").strip()
     return header, day_status
 
 
@@ -166,7 +170,8 @@ def collect_all_status(page) -> dict[str, str]:
             break
 
         page.click("#after_month")
-        page.wait_for_timeout(1000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
 
     return result
 
