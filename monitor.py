@@ -16,8 +16,8 @@
 - カレンダーは月表示で、日付ごとにCSSクラス(available系/reserved/unavailable)
   で状態が分かる。個別の日付をクリックする必要はない。
 - 「次月へ」ボタン(id="after_month")を押しても、予約枠が開放されていない
-  先の月には進まない(この施設は直近2ヶ月分のみ開放される仕様だった)。
-  そのため予約枠が開いている範囲は自動的に巡回し尽くす形になっている。
+  先の月には進まない仕様。そのため予約枠が開いている範囲は自動的に
+  巡回し尽くす形になっている。
 """
 
 import os
@@ -171,8 +171,9 @@ def collect_all_status(page) -> dict[str, str]:
 
         page.click("#after_month")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1500)
 
+    print(f"スキャンした月: {sorted(seen_headers)}")
     return result
 
 
