@@ -18,10 +18,16 @@
 - 「次月へ」ボタン(id="after_month")を押しても、予約枠が開放されていない
   先の月には進まない仕様。そのため予約枠が開いている範囲は自動的に
   巡回し尽くす形になっている。
+
+■ 耐障害性
+- サイト側が一時的に重い/応答しない場合に備え、ログイン〜巡回の一連の
+  処理全体を最大3回まで自動リトライする。
+- デフォルトのタイムアウトを60秒に延長(元は30秒でタイムアウトしていた)。
 """
 
 import os
 import json
+import time
 import smtplib
 import datetime
 from email.mime.text import MIMEText
@@ -49,6 +55,9 @@ STATE_FILE = Path(__file__).parent / "state.json"
 # 「予約可能」系のいずれかがあれば空きありと判定する。
 AVAILABLE_CLASSES = ["available", "available-lottery", "available-busy"]
 UNAVAILABLE_CLASSES = ["reserved", "unavailable"]
+
+MAX_ATTEMPTS = 3        # 1回の実行での最大試行回数
+RETRY_WAIT_SECONDS = 15  # 試行の間隔
 
 
 def get_target_dates():
@@ -177,16 +186,44 @@ def collect_all_status(page) -> dict[str, str]:
     return result
 
 
+def run_once() -> dict[str, str]:
+    """ブラウザを起動してログイン〜巡回までを1回実行する"""
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=HEADLESS)
+        try:
+            page = browser.new_page()
+            # デフォルトは30秒でタイムアウトしていたため60秒に延長
+            page.set_default_timeout(60000)
+            page.set_default_navigation_timeout(60000)
+            login(page)
+            return collect_all_status(page)
+        finally:
+            browser.close()
+
+
+def collect_all_status_with_retry() -> dict[str, str]:
+    """
+    サイト側の一時的な不調(タイムアウト等)に備え、最大 MAX_ATTEMPTS 回まで
+    ログイン〜巡回の一連の処理をやり直す。
+    """
+    last_error = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return run_once()
+        except Exception as e:
+            last_error = e
+            print(f"試行{attempt}/{MAX_ATTEMPTS}回目が失敗しました: {e}")
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_WAIT_SECONDS)
+    # 全部失敗したら最後のエラーを投げる(GitHub Actions側が失敗として検知する)
+    raise last_error
+
+
 def main():
     state = load_state()
     newly_available = []
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=HEADLESS)
-        page = browser.new_page()
-        login(page)
-        all_status = collect_all_status(page)
-        browser.close()
+    all_status = collect_all_status_with_retry()
 
     target_dates = {d.isoformat() for d in get_target_dates()}  # 土日のみ
 
